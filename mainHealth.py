@@ -120,6 +120,7 @@ st.title("Health Data Explorer")
 selected_data = st.sidebar.radio("Select Data to Display", ["Heart Rate", "Distance", "Flights Climbed"])
 
 # Filter data for the selected date
+
 #filtered_df = merged_df[merged_df['Date'] == selected_date]
 
 
