@@ -121,7 +121,6 @@ selected_data = st.sidebar.radio("Select Data to Display", ["Heart Rate", "Dista
 
 # Filter data for the selected date
 
-#filtered_df = merged_df[merged_df['Date'] == selected_date]
 
 
 # Plot the selected data over time
