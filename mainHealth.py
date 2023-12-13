@@ -98,7 +98,6 @@ distance_per_day = merged_df[merged_df['WorkoutType'].isin(['Running', 'Walking'
 # Streamlit App
 st.title("Health Data Explorer")
 
-
 # The side bar for the user to select things
 selected_data = st.sidebar.radio("Select Data to Display", ["Heart Rate", "Distance", "Flights Climbed", "Data Frame"])
 
