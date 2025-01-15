@@ -60,7 +60,6 @@ if uploaded_file is not None:
             'Workout': workout_type
         })
     workoutNew_df = pd.DataFrame(workout_info)
-   # st.write("Workout Data:", workoutNew_df)  # Debug statement
 
     #extracts the calories data
     calories_data = []
