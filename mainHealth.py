@@ -18,7 +18,6 @@ if uploaded_file is not None:
         creation_date_str = record.get('creationDate')
         creation_date = datetime.strptime(creation_date_str, "%Y-%m-%d %H:%M:%S %z")
         creation_date = creation_date.replace(second=0, microsecond=0)
-
         value = record.get('value')
         if value is not None and value.isdigit():
             heart_rate = int(value)
