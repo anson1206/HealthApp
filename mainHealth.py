@@ -149,8 +149,9 @@ if uploaded_file is not None:
         st.dataframe(filtered_df[['Time', 'HeartRate', 'WorkoutType', 'Calories']])
     elif selected_data == "Calories":
         st.write('Here is the calories burned over time')
-        st.bar_chart(filtered_df.set_index('Date')[['Calories']])
-        st.dataframe(calories_per_day.set_index('Date')[['Date', 'Calories', 'WorkoutType']])
+        st.bar_chart(calories_per_day.set_index('Date')['Calories'])
+        st.dataframe(calories_per_day.set_index('Date')[ 'Calories'])
+        st.dataframe(calories_per_day)
     elif selected_data == "Distance":
         st.write('Here is the total distance over time')
         st.bar_chart(distance_per_day.set_index('Date')['Distance'])
