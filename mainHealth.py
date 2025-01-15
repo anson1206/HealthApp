@@ -77,7 +77,6 @@ if uploaded_file is not None:
                 'Calories': calories
             })
     calories_df = pd.DataFrame(calories_data)
-    #st.write("Calories Data:", calories_df)  # Debug statement
 
     # A dictionary for the activities. Makes it easier to read the activities
     activity_dictionary = {
