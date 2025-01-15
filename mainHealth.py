@@ -139,7 +139,6 @@ if uploaded_file is not None:
 
     # Filter data for the selected date
     filtered_df = merged_df[merged_df['Date'] == selected_date]
-    #st.write("Filtered Data:", filtered_df)  # Debug statement
 
     # Plot the selected data over time
     if selected_data == "Heart Rate":
