@@ -11,6 +11,8 @@ import Journal
 import Map
 from Map import GPXMap
 from UserInputHandler import UserInputHandler
+from AIBot import AIBot
+
 # Title for the app
 st.title("Health Data Explorer")
 
@@ -178,6 +180,7 @@ if uploaded_xml_file is not None:
     elif selected_data == "Data Frame":
         st.write('Here is the data frame where you can look through the data to see information')
         st.dataframe(filtered_df[['Date', 'Time', 'HeartRate', 'Distance', 'Flights', 'WorkoutType', 'Calories']])
+    #Allows the user to input water and caloric intake
     elif selected_data == "User Input":
         water_intake, calory_intake = st.columns(2)
 
@@ -190,7 +193,7 @@ if uploaded_xml_file is not None:
             st.write('Select the date first before entering the amount of calories you ate')
             UserInputHandler().add_calory_intake(selected_date)
 
-    # Debug statement for selected_date
+
     st.write(f"Selected date: {selected_date}")
 
 
@@ -218,6 +221,19 @@ if st.session_state.get('show_journal', False):
     Journal.show_data()
     st.divider()
 
+#Chatterbot
+if st.sidebar.button("Open Chatbot"):
+    st.session_state['show_chatbot'] = True
+if st.session_state.get('show_chatbot', False):
+    st.title("Chatbot")
+    st.divider()
+    aibot = AIBot()
+    if 'user_input' not in st.session_state:
+        st.session_state['user_input'] = ""
+    st.session_state.user_input = st.text_input("Enter your message", value=st.session_state.user_input)
+    if st.button("Submit"):
+        st.write("Bot: ", aibot.chat(st.session_state.user_input))
+
 if uploaded_xml_file is not None:
     col1, col2 = st.columns(2)
     with col1:
@@ -244,3 +260,5 @@ if uploaded_xml_file is not None:
         if uploaded_gpx_file is not None:
             map = GPXMap(uploaded_gpx_file)
             map.display_map()
+
+
