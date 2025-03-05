@@ -1,0 +1,15 @@
+pip~=25.0.1
+attrs~=25.1.0
+distro~=1.9.0
+wheel~=0.41.2
+protobuf~=5.29.3
+pillow~=11.1.0
+gpxpy~=1.6.2
+folium~=0.19.4
+streamlit~=1.42.2
+geopy~=2.4.1
+streamlit_folium~=0.24.0
+openai~=1.64.0
+pandas~=2.2.3
+numpy~=2.2.3
+lxml~=5.3.1
