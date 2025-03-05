@@ -3,119 +3,151 @@ import numpy as np
 from lxml import etree
 from datetime import datetime, timedelta
 import streamlit as st
+import gzip
+from io import BytesIO
+
+def compress_file(uploaded_file):
+    """Compress uploaded XML file in-memory."""
+    if not uploaded_file or uploaded_file.getbuffer().nbytes == 0:
+        raise ValueError("Uploaded file is empty or invalid")
+
+    buffer = BytesIO()
+    with gzip.GzipFile(fileobj=buffer, mode="wb") as f_out:
+        f_out.write(uploaded_file.getvalue())
+    return buffer.getvalue()
 
 class HealthDataLoader:
     def __init__(self, uploaded_file):
         self.uploaded_file = uploaded_file
+        self.compressed_data = compress_file(self.uploaded_file)
         self.merged_df = self.load_data()
 
     def load_data(self):
-        tree = etree.parse(self.uploaded_file)
-        root = tree.getroot()
+        """Load compressed XML and process data in chunks."""
+        try:
+            with gzip.GzipFile(fileobj=BytesIO(self.compressed_data), mode="rb") as f:
+                context = etree.iterparse(f, events=('end',))
 
-        heart_rate_data = list(self.extract_heart_rate_data(root))
-        workout_info = list(self.extract_workout_info(root))
-        calories_data = list(self.extract_calories_data(root))
-        flights_climbed_data = list(self.extract_flights_climbed(root))
+                heart_rate_data = []
+                workout_data = []
+                calories_data = []
+                flights_data = []
 
+                for event, elem in context:
+                    tag = elem.tag.lower()
+                    record_type = elem.get("type")
+
+                    if record_type == "HKQuantityTypeIdentifierHeartRate":
+                        heart_rate_data.append(self.extract_heart_rate_data(elem))
+                    elif tag == "workout":
+                        workout_data.extend(self.extract_workout_info(elem))
+                    elif record_type == "HKQuantityTypeIdentifierActiveEnergyBurned":
+                        calories_data.append(self.extract_calories_data(elem))
+                    elif record_type == "HKQuantityTypeIdentifierFlightsClimbed":
+                        flights_data.append(self.extract_flights_climbed(elem))
+
+                    elem.clear()  # Free memory after processing
+
+                return self.merge_data(heart_rate_data, workout_data, calories_data, flights_data)
+        except etree.XMLSyntaxError as e:
+            raise ValueError(f"Error parsing XML file: {e}")
+
+    def merge_data(self, heart_rate_data, workout_data, calories_data, flights_data):
+        """Merge all datasets efficiently and optimize memory usage."""
         heart_rate_df = pd.DataFrame(heart_rate_data)
-        workoutNew_df = pd.DataFrame(workout_info)
+        workout_df = pd.DataFrame(workout_data)
         calories_df = pd.DataFrame(calories_data)
-        stair_count_df = pd.DataFrame(flights_climbed_data)
+        flights_df = pd.DataFrame(flights_data)
 
-        heart_rate_df['Date'] = pd.to_datetime(heart_rate_df['Date']).dt.date
-        workoutNew_df['Date'] = pd.to_datetime(workoutNew_df['Date']).dt.date
+        # Merge all dataframes
+        merged_df = (
+            heart_rate_df
+            .merge(workout_df, on=["Date", "Time"], how="left")
+            .merge(calories_df, on=["Date", "Time"], how="left")
+            .merge(flights_df, on=["Date", "Time"], how="left")
+        )
 
-        activity_dictionary = {
-            'HKWorkoutActivityTypeBaseball': 'Baseball',
-            'HKWorkoutActivityTypeRunning': 'Running',
-            'HKWorkoutActivityTypeWalking': 'Walking',
-            'HKWorkoutActivityTypeTraditionalStrengthTraining': 'Strength Training',
-            'HKQuantityTypeIdentifierDistanceWalkingRunning': 'RunningWalking'
-        }
+        # ✅ Convert 'Date' column to datetime.date to avoid mixed types
+        merged_df['Date'] = pd.to_datetime(merged_df['Date'], errors='coerce').dt.date
 
-        workoutNew_df['WorkoutType'] = workoutNew_df['Workout'].map(activity_dictionary)
-
-        merged_df = heart_rate_df.merge(workoutNew_df, on=['Date', 'Time'], how='left') \
-                                 .merge(stair_count_df, on=['Date', 'Time'], how='left') \
-                                 .merge(calories_df, on=['Date', 'Time'], how='left')
+        # ✅ Drop rows where 'Date' is NaT (conversion errors)
+        merged_df = merged_df.dropna(subset=['Date'])
 
         return merged_df
 
     @staticmethod
-    @st.cache_data
-    def extract_heart_rate_data(_root):
-        heart_rate_data = []
-        for record in _root.xpath('.//Record[@type="HKQuantityTypeIdentifierHeartRate"]'):
-            creation_date_str = record.get('creationDate')
-            creation_date = datetime.strptime(creation_date_str, "%Y-%m-%d %H:%M:%S %z")
-            value = record.get('value')
-            if value is not None and value.isdigit():
-                heart_rate = int(value)
-                heart_rate_data.append({
-                    'Date': creation_date.date(),
-                    'Time': creation_date.time().strftime("%I:%M:%S %p"),
-                    'HeartRate': heart_rate
-                })
-        return heart_rate_data
+    def extract_heart_rate_data(elem):
+        """Extract heart rate data from an element."""
+        try:
+            creation_date = elem.get("creationDate")
+            value = elem.get("value")
+            if creation_date and value and value.isdigit():
+                creation_date = datetime.strptime(creation_date, "%Y-%m-%d %H:%M:%S %z")
+                return {
+                    "Date": creation_date.date(),
+                    "Time": creation_date.time().strftime("%I:%M:%S %p"),
+                    "HeartRate": int(value)
+                }
+        except Exception as e:
+            print(f"Error parsing heart rate data: {e}")
+        return {}
 
     @staticmethod
-    @st.cache_data
-    def extract_workout_info(_root):
-        workout_info = []
-        for workout in _root.xpath('.//Workout'):
-            distance = float('nan')
-            start_date_str = workout.get('startDate')
-            end_date_str = workout.get('endDate')
-            start_date = datetime.strptime(start_date_str, "%Y-%m-%d %H:%M:%S %z")
-            end_date = datetime.strptime(end_date_str, "%Y-%m-%d %H:%M:%S %z")
-            duration = (end_date - start_date).total_seconds()
-            unit = workout.get('unit')
-            workout_type = workout.get('workoutActivityType')
-            for value in workout.xpath('WorkoutStatistics[@type="HKQuantityTypeIdentifierDistanceWalkingRunning"]'):
-                distance = float(value.get('sum'))
-            if pd.isna(distance):
-                distance = 0.0
-            for second in range(int(duration)):
-                workout_info.append({
-                    'Date': (start_date + timedelta(seconds=second)).date(),
-                    'Time': (start_date + timedelta(seconds=second)).time().strftime("%I:%M:%S %p"),
-                    'Distance': distance,
-                    'Unit': unit,
-                    'Workout': workout_type
-                })
-        return workout_info
+    def extract_workout_info(elem):
+        """Extract workout data from an element."""
+        data = []
+        try:
+            start_date = elem.get("startDate")
+            end_date = elem.get("endDate")
+            workout_type = elem.get("workoutActivityType")
+
+            if start_date and end_date:
+                start_date = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S %z")
+                end_date = datetime.strptime(end_date, "%Y-%m-%d %H:%M:%S %z")
+                duration = int((end_date - start_date).total_seconds())
+
+                data.extend([
+                    {
+                        "Date": (start_date + timedelta(seconds=second)).date(),
+                        "Time": (start_date + timedelta(seconds=second)).time().strftime("%I:%M:%S %p"),
+                        "WorkoutType": workout_type
+                    }
+                    for second in range(duration)
+                ])
+        except Exception as e:
+            print(f"Error parsing workout data: {e}")
+        return data
 
     @staticmethod
-    @st.cache_data
-    def extract_calories_data(_root):
-        calories_data = []
-        for record in _root.xpath('.//Record[@type="HKQuantityTypeIdentifierActiveEnergyBurned"]'):
-            creation_date_str = record.get('creationDate')
-            creation_date = datetime.strptime(creation_date_str, "%Y-%m-%d %H:%M:%S %z")
-            value = record.get('value')
-            if value is not None:
-                calories = float(value)
-                calories_data.append({
-                    'Date': creation_date.date(),
-                    'Time': creation_date.time().strftime("%I:%M:%S %p"),
-                    'Calories': calories
-                })
-        return calories_data
+    def extract_calories_data(elem):
+        """Extract calories data from an element."""
+        try:
+            creation_date = elem.get("creationDate")
+            value = elem.get("value")
+            if creation_date and value:
+                creation_date = datetime.strptime(creation_date, "%Y-%m-%d %H:%M:%S %z")
+                return {
+                    "Date": creation_date.date(),
+                    "Time": creation_date.time().strftime("%I:%M:%S %p"),
+                    "Calories": float(value)
+                }
+        except Exception as e:
+            print(f"Error parsing calories data: {e}")
+        return {}
 
     @staticmethod
-    @st.cache_data
-    def extract_flights_climbed(_root):
-        flights_climbed_data = []
-        for record in _root.xpath('.//Record[@type="HKQuantityTypeIdentifierFlightsClimbed"]'):
-            creation_date_str = record.get('creationDate')
-            creation_date = datetime.strptime(creation_date_str, "%Y-%m-%d %H:%M:%S %z")
-            value = record.get('value')
-            if value is not None and value.isdigit():
-                flight_count = int(value)
-                flights_climbed_data.append({
-                    'Date': creation_date.date(),
-                    'Time': creation_date.time().strftime("%I:%M:%S %p"),
-                    'Flights': flight_count
-                })
-        return flights_climbed_data
+    def extract_flights_climbed(elem):
+        """Extract flights climbed data from an element."""
+        try:
+            creation_date = elem.get("creationDate")
+            value = elem.get("value")
+            if creation_date and value and value.isdigit():
+                creation_date = datetime.strptime(creation_date, "%Y-%m-%d %H:%M:%S %z")
+                return {
+                    "Date": creation_date.date(),
+                    "Time": creation_date.time().strftime("%I:%M:%S %p"),
+                    "Flights": int(value)
+                }
+        except Exception as e:
+            print(f"Error parsing flights climbed data: {e}")
+        return {}

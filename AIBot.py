@@ -49,15 +49,18 @@ class AIBot:
             st.session_state["messages"] = []
         st.session_state["messages"].append({"role": "user", "content": prompt})
         try:
-            with st.chat_message("assistant"):
-                stream = openai.chat.completions.create(
-                    model=st.session_state["openai_model"],
-                    messages=st.session_state["messages"],
-                    stream=True,
-                )
-                response = st.write_stream(stream)
-            st.session_state["messages"].append({"role": "assistant", "content": response})
-            return response
+            response = openai.chat.completions.create(
+                model=st.session_state["openai_model"],
+                messages=st.session_state["messages"]
+            )
+            # Extract the response content correctly
+            response_content = response.choices[0].message.content
+            # Check if the response is empty
+            if not response_content.strip():
+                return "Sorry, I couldn't generate a response."
+            # Append the response to the session history
+            st.session_state["messages"].append({"role": "assistant", "content": response_content})
+            return response_content
         except Exception as e:
             return f"Error with AI response: {str(e)}"
 
@@ -173,17 +176,27 @@ class AIBot:
         return None
 
     # Display the chat interface
+
     def display_chat(self):
         st.subheader("AI Health & General Chatbot")
+
+        # Display the chat history
         for message in self.chat_history:
             st.chat_message(message["role"]).write(message["content"])
 
+        # User input field
         user_input = st.chat_input("Ask me anything (health or general)...")
 
         if user_input:
+            # Append user input to the chat history
             self.chat_history.append({"role": "user", "content": user_input})
+
+            # Get the response from the bot (general or health-related)
             response = self.get_response(user_input)
+
+            # Append bot response to the chat history
             self.chat_history.append({"role": "assistant", "content": response})
 
+            # Display user input and bot response
             st.chat_message("user").write(user_input)
             st.chat_message("assistant").write(response)
