@@ -9,13 +9,14 @@ st.title("Health Data Explorer")
 
 uploaded_xml_file = st.sidebar.file_uploader("Choose an XML file", type=['xml'])
 uploaded_gpx_file = st.sidebar.file_uploader("Choose a GPX file", type=['gpx'])
-
+health_data = None
 if uploaded_xml_file is not None or uploaded_gpx_file is not None:
     col1, col2 = st.columns(2)
     with col1:
         st.header("Health Data")
         if uploaded_xml_file is not None:
             data_loader = HealthDataLoader(uploaded_xml_file)
+            health_data = data_loader.merged_df
             explorer = HealthDataExplorer(data_loader.merged_df)
             explorer.display_data()
     with col2:
@@ -43,14 +44,11 @@ if st.session_state.get('show_journal', False):
 if st.sidebar.button("Open Chatbot"):
     st.session_state['show_chatbot'] = True
 if st.session_state.get('show_chatbot', False):
-    st.title("Chatbot")
-    st.divider()
-    aibot = AIBot()
-    if 'user_input' not in st.session_state:
-        st.session_state['user_input'] = ""
-    st.session_state.user_input = st.text_input("Enter your message", value=st.session_state.user_input)
-    if st.button("Submit"):
-        st.write("Bot: ", aibot.chat(st.session_state.user_input))
+    api_key = st.secrets["OPENAI_API_KEY"]
+    chatbot = AIBot(api_key, health_data)
+    chatbot.display_chat()
+    if st.sidebar.button("Close Chatbot"):
+        st.session_state['show_chatbot'] = False
 
 if uploaded_xml_file is None and uploaded_gpx_file is None:
     st.write("Please upload an XML file and/or a GPX file to proceed.")

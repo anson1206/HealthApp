@@ -43,13 +43,13 @@ class UserInputHandler:
         # Checks to see if the date already exists in the data frame
         if selected_date in st.session_state.calory_intake_df['Date'].values:
             st.session_state.calory_intake_df.loc[
-                st.session_state.calory_intake_df['Date'] == selected_date, 'Calories'] = calory_intake_value
+                st.session_state.calory_intake_df['Date'] == selected_date, 'CaloriesIntake'] = calory_intake_value
         else:
             # Add new entry
-            newEntry2 = pd.DataFrame({'Date': [selected_date], 'Calories': [calory_intake_value]})
+            newEntry2 = pd.DataFrame({'Date': [selected_date], 'CaloriesIntake': [calory_intake_value]})
             st.session_state.calory_intake_df = pd.concat([st.session_state.calory_intake_df, newEntry2],
                                                           ignore_index=True)
 
         # Display updated graph
-        calory_intake_per_day = st.session_state.calory_intake_df.groupby('Date')['Calories'].sum().reset_index()
-        st.bar_chart(calory_intake_per_day.set_index('Date')['Calories'])
+        calory_intake_per_day = st.session_state.calory_intake_df.groupby('Date')['CaloriesIntake'].sum().reset_index()
+        st.bar_chart(calory_intake_per_day.set_index('Date')['CaloriesIntake'])
