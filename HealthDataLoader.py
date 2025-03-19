@@ -18,14 +18,16 @@ def compress_file(uploaded_file):
 
 
 class HealthDataLoader:
-    def __init__(self, uploaded_file):
+    def __init__(self, uploaded_file, min_year = None):
         self.uploaded_file = uploaded_file
         self.compressed_data = compress_file(self.uploaded_file)
-        self.merged_df = self.load_data()
+        self.merged_df = self.load_data(min_year = min_year)
 
     #Load data from the compressed XML file
-    def load_data(self):
+    def load_data(self, min_year=None):
         try:
+            if min_year:
+                print(f"Filtering data for year >= {min_year}")
             with gzip.GzipFile(fileobj=BytesIO(self.compressed_data), mode="rb") as f:
                 context = etree.iterparse(f, events=('end',))
 
@@ -35,45 +37,91 @@ class HealthDataLoader:
                 flights_climbed_data = []
                 distance_data = []
 
+                # Debug counters
+                tag_counts = {}
+
                 for event, elem in context:
-                    tag = elem.tag.lower()
+                    # Get tag name without namespace
+                    full_tag = elem.tag
+                    tag = full_tag.split('}')[-1].lower() if '}' in full_tag else full_tag.lower()
+
+                    # Count tag occurrences for debugging
+                    if tag not in tag_counts:
+                        tag_counts[tag] = 0
+                    tag_counts[tag] += 1
+
+                    # Check for WorkoutStatistics specifically, case-insensitive
+                    if tag.lower() == 'workoutstatistics':
+                        if elem.get("type") == "HKQuantityTypeIdentifierDistanceWalkingRunning":
+                            print(f"FOUND TARGET: WorkoutStatistics with distance {elem.get('sum')}")
+                            distance_record = self.extract_distance_data(elem)
+                            if distance_record:
+                                distance_data.append(distance_record)
+                                print(f"Added WorkoutStatistics distance record: {distance_record}")
+
+                    # Process other record types as before
                     record_type = elem.get("type")
 
                     if record_type == "HKQuantityTypeIdentifierHeartRate":
                         hr_data = self.extract_heart_rate_data(elem)
                         if hr_data:
-                            heart_rate_data.append(hr_data)
+                            # Only add the record if it meets the year criteria
+                            if min_year is None or hr_data["Date"].year >= min_year:
+                                heart_rate_data.append(hr_data)
+
                     elif tag == 'workout':
-                        workout_data = self.extract_workout_info(elem)
+                        workout_data = self.extract_workout_and_distance_info(elem)
                         if workout_data:
-                            workout_info.extend(workout_data)
-                    # Add explicit handling for distance records (in case they exist outside of workouts)
+                            # Filter workout entries by year
+                            if min_year is None:
+                                workout_info.extend(workout_data)
+                            else:
+                                # Only keep records from min_year onwards
+                                filtered_workout_data = [record for record in workout_data
+                                                         if record["Date"].year >= min_year]
+                                workout_info.extend(filtered_workout_data)
+
+                                # For distance data
                     elif record_type == "HKQuantityTypeIdentifierDistanceWalkingRunning":
                         distance_record = self.extract_distance_data(elem)
                         if distance_record:
-                            distance_data.append(distance_record)
+                            if min_year is None or distance_record["Date"].year >= min_year:
+                                distance_data.append(distance_record)
+                    # For calories data
                     elif record_type == "HKQuantityTypeIdentifierActiveEnergyBurned":
                         calories_record = self.extract_calories_data(elem)
                         if calories_record:
-                            calories_data.append(calories_record)
+                            if min_year is None or calories_record["Date"].year >= min_year:
+                                calories_data.append(calories_record)
+
+                    # For flights climbed data
                     elif record_type == "HKQuantityTypeIdentifierFlightsClimbed":
-                        flights_record = self.extract_flights_climbed(elem)
-                        if flights_record:
-                            flights_climbed_data.append(flights_record)
+                            flights_record = self.extract_flights_climbed(elem)
+                            if flights_record:
+                                if min_year is None or flights_record["Date"].year >= min_year:
+                                    flights_climbed_data.append(flights_record)
+
                     # Free memory after processing
                     elem.clear()
 
-                # Debug information to help diagnose issues
+                # Print tag counts to help identify all element types
+                print("XML Tag counts:")
+                for tag, count in tag_counts.items():
+                    print(f"  {tag}: {count}")
+
                 print(f"Processed data counts: Heart rate={len(heart_rate_data)}, Workout={len(workout_info)}, "
                       f"Distance={len(distance_data)}, Calories={len(calories_data)}, Flights={len(flights_climbed_data)}")
+
 
                 return self.merge_data(heart_rate_data, workout_info, calories_data, flights_climbed_data,
                                        distance_data)
         except etree.XMLSyntaxError as e:
             raise ValueError(f"Error parsing XML file: {e}")
+
+
     #Merge all datasets efficiently and optimize memory usage
     def merge_data(self, heart_rate_data, workout_info, calories_data, flights_climbed_data, distance_data=None):
-        # Create dataframes from collected data
+        # Create dataframes from collected data (unchanged code)
         heart_rate_df = pd.DataFrame(heart_rate_data) if heart_rate_data else pd.DataFrame(
             columns=['Date', 'Time', 'HeartRate'])
         workout_df = pd.DataFrame(workout_info) if workout_info else pd.DataFrame(
@@ -85,16 +133,10 @@ class HealthDataLoader:
         distance_df = pd.DataFrame(distance_data) if distance_data else pd.DataFrame(
             columns=['Date', 'Time', 'Distance'])
 
-        # Debug information
-        for df_name, df in [("Heart rate", heart_rate_df), ("Workout", workout_df),
-                            ("Distance", distance_df), ("Calories", calories_df),
-                            ("Flights", flights_df)]:
-            if not df.empty:
-                print(f"{df_name} DataFrame has {len(df)} rows and columns: {df.columns.tolist()}")
-                if 'Date' in df.columns:
-                    print(f"{df_name} date range: {df['Date'].min()} to {df['Date'].max()}")
-            else:
-                print(f"Warning: Empty {df_name} DataFrame")
+        # Filter distance data to include only those records that are associated with workouts
+        if not distance_df.empty and not workout_df.empty:
+            distance_df = distance_df[
+                distance_df['Date'].isin(workout_df['Date']) & distance_df['Time'].isin(workout_df['Time'])]
 
         # A dictionary for the activities. Makes it easier to read the activities
         activity_dictionary = {
@@ -109,48 +151,45 @@ class HealthDataLoader:
         if not workout_df.empty and 'Workout' in workout_df.columns:
             workout_df['WorkoutType'] = workout_df['Workout'].map(activity_dictionary)
             workout_df['WorkoutType'] = workout_df['WorkoutType'].fillna('Other')
-            # Debug information
-            print(f"Found workout types: {workout_df['Workout'].unique()}")
-            print(f"Mapped workout types: {workout_df['WorkoutType'].unique()}")
 
-        # Converts the 'Date' column to datetime in all dataframes
-        for df in [heart_rate_df, workout_df, flights_df, calories_df, distance_df]:
-            if not df.empty and 'Date' in df.columns:
-                df['Date'] = pd.to_datetime(df['Date']).dt.date
+        # Create base dataframe with ALL timestamps
+        all_dates_times = pd.DataFrame()
+        for df in [heart_rate_df, workout_df, distance_df, calories_df, flights_df]:
+            if not df.empty and 'Date' in df.columns and 'Time' in df.columns:
+                df_dates = df[['Date', 'Time']].copy()
+                all_dates_times = pd.concat([all_dates_times, df_dates])
 
+        # Remove duplicates
+        all_dates_times = all_dates_times.drop_duplicates(subset=['Date', 'Time'])
 
+        # USE all_dates_times as the base for merging
+        merged_df = all_dates_times.copy()
 
         # heart rate data as the base
         if not heart_rate_df.empty:
-            merged_df = heart_rate_df.copy()
-            # Ensure we have unique rows by Date and Time
+            merged_df = pd.merge(merged_df, heart_rate_df, on=['Date', 'Time'], how='left')
             merged_df = merged_df.drop_duplicates(subset=['Date', 'Time'])
         else:
-            # If no heart rate data, create a base from workout data
             if not workout_df.empty:
                 merged_df = workout_df[['Date', 'Time']].copy()
                 merged_df['HeartRate'] = np.nan
             else:
-                # If no workout data either, use any available data
                 for df, col in [(distance_df, 'Distance'), (flights_df, 'Flights'), (calories_df, 'Calories')]:
                     if not df.empty:
                         merged_df = df[['Date', 'Time']].copy()
                         merged_df['HeartRate'] = np.nan
                         break
                 else:
-                    # If all data frames are empty, return an empty DataFrame
                     return pd.DataFrame(
                         columns=['Date', 'Time', 'HeartRate', 'Distance', 'WorkoutType', 'Flights', 'Calories'])
 
-
         # Add workout data
         if not workout_df.empty:
-            # Create a temporary DataFrame with only essential columns
-            workout_temp = workout_df[['Date', 'Time', 'Distance', 'Workout', 'WorkoutType']].copy()
-
-            workout_temp = workout_temp.drop_duplicates(subset=['Date', 'Time'])
-
-            # Left join to preserve heart rate records
+            workout_temp = workout_df.groupby(['Date', 'Time']).agg({
+                'Distance': 'sum',
+                'Workout': 'first',
+                'WorkoutType': 'first'
+            }).reset_index()
             merged_df = pd.merge(merged_df, workout_temp, on=['Date', 'Time'], how='left')
         else:
             merged_df['Distance'] = np.nan
@@ -158,22 +197,18 @@ class HealthDataLoader:
 
         # Add standalone distance data where available
         if not distance_df.empty:
-            distance_temp = distance_df[['Date', 'Time', 'Distance']].copy()
+            distance_temp = distance_df.copy()
             distance_temp = distance_temp.rename(columns={'Distance': 'Distance_standalone'})
-            distance_temp = distance_temp.drop_duplicates(subset=['Date', 'Time'])
-
             merged_df = pd.merge(merged_df, distance_temp, on=['Date', 'Time'], how='left')
-
-            # Fill in missing Distance values from standalone distance records
             if 'Distance' in merged_df.columns:
                 mask = merged_df['Distance'].isna() & merged_df['Distance_standalone'].notna()
                 merged_df.loc[mask, 'Distance'] = merged_df.loc[mask, 'Distance_standalone']
+                mask = merged_df['Distance'].notna() & merged_df['Distance_standalone'].notna()
+                merged_df.loc[mask, 'Distance'] = merged_df.loc[mask, ['Distance', 'Distance_standalone']].max(axis=1)
             else:
                 merged_df['Distance'] = merged_df['Distance_standalone']
-
-            # Clean up
             if 'Distance_standalone' in merged_df.columns:
-                merged_df.drop('Distance_standalone', axis=1, inplace=True)
+                merged_df = merged_df.drop('Distance_standalone', axis=1)
 
         # Add flights data
         if not flights_df.empty:
@@ -199,15 +234,7 @@ class HealthDataLoader:
         if 'Calories' in merged_df.columns:
             merged_df['Calories'] = merged_df['Calories'].fillna(0.0)
 
-        # Final data cleanup and validation
-        print(f"Final merged dataframe has {len(merged_df)} rows")
-        if 'HeartRate' in merged_df.columns:
-            print(f"Heart rate summary: {merged_df['HeartRate'].describe()}")
-        if 'Distance' in merged_df.columns:
-            print(f"Distance summary: {merged_df['Distance'].describe()}")
-
         return merged_df
-
     # Extract data from XML elements
     @staticmethod
     def extract_heart_rate_data(elem):
@@ -227,7 +254,7 @@ class HealthDataLoader:
 
     # Extract workout data from an element
     @staticmethod
-    def extract_workout_info(elem):
+    def extract_workout_and_distance_info(elem):
         data = []
         try:
             # Process the workout element directly
@@ -240,61 +267,98 @@ class HealthDataLoader:
                 end_date = datetime.strptime(end_date_str, "%Y-%m-%d %H:%M:%S %z")
                 duration = (end_date - start_date).total_seconds()
 
-                # Initialize distance to 0
+                # Initialize distance
                 distance = 0.0
                 unit = elem.get('unit', 'mi')
 
-                # Looks for distance metrics in WorkoutStatistics
-                for value in elem.findall('./WorkoutStatistics'):
-                    if value.get('type') == 'HKQuantityTypeIdentifierDistanceWalkingRunning':
+                # Try multiple approaches to find distance in different formats
+
+                # Check for totalDistance attribute directly on the workout
+                total_distance = elem.get('totalDistance')
+                if total_distance:
+                    try:
+                        distance = float(total_distance)
+                        print(f"Found direct totalDistance: {distance}")
+                    except (ValueError, TypeError):
+                        pass
+
+                # Try WorkoutStatistics - using a broader XPath to search deeper in the structure
+                for value in elem.findall('.//WorkoutStatistics'):
+                    stat_type = value.get('type')
+                    if stat_type and ('Distance' in stat_type or 'distance' in stat_type):
                         try:
                             sum_value = value.get('sum')
                             if sum_value:
                                 distance = float(sum_value)
+                                print(f"Found distance in WorkoutStatistics: {distance}")
                                 break
-                        except (TypeError, ValueError) as e:
-                            print(f"Error converting distance value: {e}")
+                        except (TypeError, ValueError):
+                            pass
 
-                if pd.isna(distance):
-                    distance = 0.0
+                # Try WorkoutRoute/MetadataEntry
+                for route in elem.findall('.//WorkoutRoute'):
+                    for entry in route.findall('.//MetadataEntry'):
+                        if entry.get('key') == 'HKMetadataKeyWorkoutDistance':
+                            try:
+                                value = entry.get('value')
+                                if value:
+                                    distance = float(value)
+                                    print(f"Found distance in WorkoutRoute: {distance}")
+                                    break
+                            except (TypeError, ValueError):
+                                pass
 
-                # Create entries for each second of the workout
-                for i in range(int(duration)):
+                if distance > 0:
+                    print(f"Final distance for {workout_type}: {distance}")
+
+                # Create entries for each minute of the workout
+                minute_interval = 60
+                for i in range(0, int(duration)):
+                    minute_distance = distance / (duration / minute_interval) if duration > 0 else 0
                     data.append({
                         "Date": (start_date + timedelta(seconds=i)).date(),
                         "Time": (start_date + timedelta(seconds=i)).time().strftime("%I:%M:%S %p"),
-                        "Distance": distance,
+                        "Distance": minute_distance,
                         "Unit": unit,
                         "Workout": workout_type
                     })
 
-                print(f"Extracted workout: {workout_type} with {len(data)} entries")
+                print(f"Extracted workout: {workout_type} with {len(data)} entries, total distance: {distance}")
         except Exception as e:
             print(f"Error parsing workout data: {e}")
         return data
-
     #Extract standalone distance data from an element
     @staticmethod
     def extract_distance_data(elem):
         try:
-            creation_date = elem.get("creationDate")
-            value = elem.get("value")
-            unit = elem.get("unit", "mi")
-            if creation_date and value:
-                try:
-                    distance = float(value)
-                    creation_date = datetime.strptime(creation_date, "%Y-%m-%d %H:%M:%S %z")
-                    #print(f"Found standalone distance record: {distance} {unit}")
-                    return {
-                        "Date": creation_date.date(),
-                        "Time": creation_date.time().strftime("%I:%M:%S %p"),
-                        "Distance": distance,
-                        "Unit": unit
-                    }
-                except (TypeError, ValueError) as e:
-                    print(f"Error converting standalone distance value: {e}")
+            # Get element tag without namespace
+            tag_name = elem.tag.split('}')[-1].lower() if '}' in elem.tag else elem.tag.lower()
+
+            # Handle both record types
+            if tag_name == 'workoutstatistics' or elem.get("type") == "HKQuantityTypeIdentifierDistanceWalkingRunning":
+                # Get the date (try different possible field names)
+                start_date = elem.get("startDate") or elem.get("creationDate")
+                # Get the value (try different possible field names)
+                value = elem.get("sum") or elem.get("value")
+                unit = elem.get("unit", "mi")
+
+                if start_date and value:
+                    try:
+                        distance = float(value)
+                        start_date = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S %z")
+                        #print(f"Found distance record: {tag_name} with {distance} {unit}")
+                        return {
+                            "Date": start_date.date(),
+                            "Time": start_date.time().strftime("%I:%M:%S %p"),
+                            "Distance": distance,
+                            "Unit": unit
+                        }
+                    except (TypeError, ValueError) as e:
+                        print(f"Error converting distance value: {e}")
+                else:
+                    print(f"Missing required fields - Date: {start_date}, Value: {value}")
         except Exception as e:
-            print(f"Error parsing standalone distance data: {e}")
+            print(f"Error parsing distance data: {e}")
         return None
 
     # Extract calories data from an element

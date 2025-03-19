@@ -15,7 +15,8 @@ if uploaded_xml_file is not None and uploaded_gpx_file is not None:
     with col1:
         st.header("Health Data")
         if uploaded_xml_file is not None:
-            data_loader = HealthDataLoader(uploaded_xml_file)
+            min_year = None if st.session_state.get('include_all_years', False) else st.session_state.get('min_year')
+            data_loader = HealthDataLoader(uploaded_xml_file, min_year=min_year)
             health_data = data_loader.merged_df
             explorer = HealthDataExplorer(data_loader.merged_df)
             explorer.display_data()

@@ -19,12 +19,35 @@ class GPXMap:
         return self.coordinates
 
     def get_distance(self):
-        if not self.coordinates:
-           self.get_coordinates()
+        """Calculate total distance including all tracks and segments with elevation"""
         total_distance = 0.0
-        for i in range(1, len(self.coordinates)):
-            total_distance += geodesic(self.coordinates[i - 1], self.coordinates[i]).miles
+
+        # Process all tracks and segments
+        for track in self.gpx.tracks:
+            for segment in track.segments:
+                points = segment.points
+                for i in range(1, len(points)):
+                    # Include elevation in calculation when available
+                    prev = (points[i - 1].latitude, points[i - 1].longitude,
+                            points[i - 1].elevation if points[i - 1].elevation else 0)
+                    current = (points[i].latitude, points[i].longitude,
+                               points[i].elevation if points[i].elevation else 0)
+
+                    # Calculate distance between consecutive points
+                    if prev[2] != 0 or current[2] != 0:
+                        # If elevation data exists, calculate 3D distance
+                        flat_distance = geodesic(prev[:2], current[:2]).miles
+                        elevation_diff_miles = abs(prev[2] - current[2]) / 1609.34  # convert meters to miles
+                        # Pythagorean theorem for 3D distance
+                        point_distance = (flat_distance ** 2 + elevation_diff_miles ** 2) ** 0.5
+                    else:
+                        # Otherwise use flat distance
+                        point_distance = geodesic(prev[:2], current[:2]).miles
+
+                    total_distance += point_distance
+
         return total_distance
+
 
     def create_map(self):
         if not self.coordinates:

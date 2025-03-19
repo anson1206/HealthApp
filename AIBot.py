@@ -8,7 +8,7 @@ class AIBot:
         self.api_key = api_key
         self.health_data = self.merge_health_data(health_data)
         self.chat_history = []
-        openai.api_key = self.api_key  # Set API key for OpenAI
+        openai.api_key = self.api_key
 
     def merge_health_data(self, health_data):
         # Merges the health data with the water and calory intake data
@@ -66,51 +66,88 @@ class AIBot:
 
     #Retrieves workout types for a given date
     def get_workout_info(self, date):
-        if self.health_data is None or "WorkoutType" not in self.health_data.columns:
+        if self.health_data is None or "Workout" not in self.health_data.columns:
             return "No workout data available."
+
         if date:
-            filtered_data = self.health_data[self.health_data["Date"] == date]
-        else:
-            filtered_data = self.health_data
-        workouts = filtered_data["WorkoutType"].dropna().unique().tolist()
-        if workouts:
-            return f"Workouts: {', '.join(workouts)}"
-        return "No workouts found for this date."
+            # Ensure we're working with datetime objects
+            if not pd.api.types.is_datetime64_dtype(self.health_data['Date']):
+                self.health_data['Date'] = pd.to_datetime(self.health_data['Date'])
+
+            # Filter data for the specific date
+            filtered_data = self.health_data[self.health_data["Date"].dt.date == date]
+
+            workouts = filtered_data["WorkoutType"].dropna().unique().tolist()
+            if workouts:
+                return f"Workouts on {date}: {', '.join(workouts)}"
+            return f"No workouts found for {date}."
+        return "Please specify a date to check workout information."
 
     #Calculates the heart rate range for a given date
     def get_heart_rate_range(self, date):
         if self.health_data is None or "HeartRate" not in self.health_data.columns:
             return "No heart rate data available."
+
         if date:
-            filtered_data = self.health_data[self.health_data["Date"] == date]
+            if not pd.api.types.is_datetime64_dtype(self.health_data['Date']):
+                self.health_data['Date'] = pd.to_datetime(self.health_data['Date'])
+
+            # Filter data for the specific date
+            filtered_data = self.health_data[self.health_data["Date"].dt.date == date]
+
+            # Filter out null/missing/zero heart rate values
+            valid_hr_data = filtered_data[filtered_data["HeartRate"].notna() & (filtered_data["HeartRate"] > 0)]
+
+            if not valid_hr_data.empty:
+                min_hr = int(valid_hr_data["HeartRate"].min())
+                max_hr = int(valid_hr_data["HeartRate"].max())
+                return f"Heart rate range: {min_hr}-{max_hr} bpm"
+            else:
+                return "No valid heart rate data found for this date."
         else:
-            filtered_data = self.health_data
-        if not filtered_data.empty:
-            min_hr = filtered_data["HeartRate"].min()
-            max_hr = filtered_data["HeartRate"].max()
-            return f"Heart rate range: {min_hr}-{max_hr} bpm"
-        return "No heart rate data found for this date."
+            return "No date specified for heart rate data."
 
     #Calculates the total calories burned for a given date
     def burned_calories(self, date):
         if self.health_data is None or "Calories" not in self.health_data.columns:
             return "No calorie data available."
-        filtered_data = self.health_data[self.health_data["Date"] == date]
-        if not filtered_data.empty:
-            total_cal_burned = filtered_data["Calories"].sum()
-            return f"You burned {total_cal_burned} calories today."
-        return "No calorie data available for this date."
+        if date is None:
+            return "Please specify a valid date to check calorie data."
+        try:
+            # Ensure we're working with datetime objects for proper comparison
+            if not pd.api.types.is_datetime64_dtype(self.health_data['Date']):
+                self.health_data['Date'] = pd.to_datetime(self.health_data['Date'])
+
+            # Filter data for the specific date using date component comparison
+            filtered_data = self.health_data[self.health_data["Date"].dt.date == date]
+
+            if not filtered_data.empty:
+                # Sum the calories for the date and format with 1 decimal place
+                total_cal_burned = filtered_data["Calories"].sum()
+                return f"You burned {total_cal_burned:.1f} calories on {date}."
+            else:
+                return f"No calorie data available for {date}."
+        except Exception as e:
+            return f"Error processing calorie data: {str(e)}"
 
     #Calculates the range of calories burned for a given date
     def cal_range(self, date):
         if self.health_data is None or "Calories" not in self.health_data.columns:
             return "No calorie data available."
-        filtered_data = self.health_data[self.health_data["Date"] == date]
-        if not filtered_data.empty:
-            min_cal = filtered_data["Calories"].min()
-            max_cal = filtered_data["Calories"].max()
-            return f"Calories burned range: {min_cal}-{max_cal} kcal"
-        return "No calorie data available for this date."
+        if date:
+            # Ensure we're working with datetime objects
+            if not pd.api.types.is_datetime64_dtype(self.health_data['Date']):
+                self.health_data['Date'] = pd.to_datetime(self.health_data['Date'])
+
+            # Filter data for the specific date using date component
+            filtered_data = self.health_data[self.health_data["Date"].dt.date == date]
+
+            if not filtered_data.empty:
+                min_cal = filtered_data["Calories"].min()
+                max_cal = filtered_data["Calories"].max()
+                return f"Calories burned range: {min_cal:.1f}-{max_cal:.1f} kcal"
+            return f"No calorie data available for {date}."
+        return "Please specify a date to check calorie range."
 
     #Estimates daily calorie needs based on heart rate, calorie intake, and calories burned
     def recommend_calories(self, date):
@@ -139,12 +176,13 @@ class AIBot:
         if self.health_data is None or "Flights" not in self.health_data.columns:
             return "No stair climb data available."
         if date:
+            if not pd.api.types.is_datetime64_dtype(self.health_data['Date']):
+                self.health_data['Date'] = pd.to_datetime(self.health_data['Date'])
             filtered_data = self.health_data[self.health_data["Date"] == date]
-        else:
-            filtered_data = self.health_data
-        if not filtered_data.empty:
-            total_flights = filtered_data["Flights"].sum()
-            return f"You climbed {total_flights} flights of stairs."
+
+            if not filtered_data.empty:
+                total_flights = filtered_data["Flights"].sum()
+                return f"You climbed {total_flights} flights of stairs."
         return "No flight climb data available for this date."
 
     #Providea a hydration recommendation based on the user's water intake
