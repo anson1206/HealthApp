@@ -11,13 +11,14 @@ class AIBot:
         openai.api_key = self.api_key
 
     def merge_health_data(self, health_data):
-        # Merges the health data with the water and calory intake data
+        health_data['Date'] = pd.to_datetime(health_data['Date'])
         if 'water_intake_df' in st.session_state:
-            health_data = pd.merge(health_data, st.session_state.water_intake_df, on='Date', how='left', sort = False)
+            st.session_state.water_intake_df['Date'] = pd.to_datetime(st.session_state.water_intake_df['Date'])
+            health_data = pd.merge(health_data, st.session_state.water_intake_df, on='Date', how='left', sort=False)
         if 'calory_intake_df' in st.session_state:
+            st.session_state.calory_intake_df['Date'] = pd.to_datetime(st.session_state.calory_intake_df['Date'])
             health_data = pd.merge(health_data, st.session_state.calory_intake_df, on='Date', how='left', sort=False)
         return health_data
-
     #Handles both general AI responses and health-related queries
     def get_response(self, prompt):
         date = self.extract_date_from_prompt(prompt)
@@ -58,7 +59,7 @@ class AIBot:
             # Check if the response is empty
             if not response_content.strip():
                 return "Sorry, I couldn't generate a response."
-            # Append the response to the session history
+
             st.session_state["messages"].append({"role": "assistant", "content": response_content})
             return response_content
         except Exception as e:
@@ -154,21 +155,22 @@ class AIBot:
         if self.health_data is None or "HeartRate" not in self.health_data.columns or "CaloriesIntake" not in self.health_data.columns or "CaloriesBurned" not in self.health_data.columns:
             return "Not enough data available."
         if date:
+            if not pd.api.types.is_datetime64_dtype(self.health_data['Date']):
+                self.health_data['Date'] = pd.to_datetime(self.health_data['Date'])
             filtered_data = self.health_data[self.health_data["Date"] == date]
-        else:
-            filtered_data = self.health_data
-        if not filtered_data.empty:
-            avg_hr = filtered_data["HeartRate"].mean()
-            total_calories_intake = filtered_data["CaloriesIntake"].sum()
-            total_calories_burned = filtered_data["Calories"].sum()
-            if avg_hr < 60:
-                calorie_recommendation = "1800-2200 kcal"
-            elif avg_hr < 100:
-                calorie_recommendation = "2200-2600 kcal"
-            else:
-                calorie_recommendation = "2600-3000 kcal"
-            net_calories = total_calories_intake - total_calories_burned
-            return f"Based on your heart rate, your calorie intake should be around {calorie_recommendation}. You have consumed {total_calories_intake} kcal and burned {total_calories_burned} kcal today, resulting in a net calorie intake of {net_calories} kcal."
+
+            if not filtered_data.empty:
+                avg_hr = filtered_data["HeartRate"].mean()
+                total_calories_intake = filtered_data["CaloriesIntake"].sum()
+                total_calories_burned = filtered_data["Calories"].sum()
+                if avg_hr < 60:
+                    calorie_recommendation = "1800-2200 kcal"
+                elif avg_hr < 100:
+                    calorie_recommendation = "2200-2600 kcal"
+                else:
+                    calorie_recommendation = "2600-3000 kcal"
+                net_calories = total_calories_intake - total_calories_burned
+                return f"Based on your heart rate, your calorie intake should be around {calorie_recommendation}. You have consumed {total_calories_intake} kcal and burned {total_calories_burned} kcal today, resulting in a net calorie intake of {net_calories} kcal."
         return "Not enough data available."
 
     #Returns the number of flights climbed for a given date
@@ -190,17 +192,20 @@ class AIBot:
         if self.health_data is None or "Water Intake (gallons)" not in self.health_data.columns:
             return "No water intake data available."
         if date:
-            filtered_data = self.health_data[self.health_data["Date"] == date]
-        else:
-            filtered_data = self.health_data
-        if not filtered_data.empty:
-            avg_water = filtered_data["Water Intake (gallons)"].mean()
-            if avg_water < 0.5:
-                return "You should drink more water. Aim for at least 0.5 gallons per day."
-            elif avg_water < 1:
-                return "Good job! Try to drink a bit more to reach 1 gallon per day."
-            else:
-                return "Great! You are well-hydrated."
+            if not pd.api.types.is_datetime64_dtype(self.health_data['Date']):
+                self.health_data['Date'] = pd.to_datetime(self.health_data['Date'])
+
+            # Filter by date
+            filtered_data = self.health_data[self.health_data["Date"].dt.date == date]
+
+            if not filtered_data.empty:
+                avg_water = filtered_data["Water Intake (gallons)"].mean()
+                if avg_water < 0.5:
+                    return "You should drink more water. Aim for at least 0.5 gallons per day."
+                elif avg_water < 1:
+                    return "Good job! Try to drink a bit more to reach 1 gallon per day."
+                else:
+                    return "Great! You are well-hydrated."
         return "No water intake data available to provide hydration tips."
 
     # Extracts a date from the user’s input if available
@@ -214,7 +219,6 @@ class AIBot:
         return None
 
     # Display the chat interface
-
     def display_chat(self):
         st.subheader("AI Health & General Chatbot")
 

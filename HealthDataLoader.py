@@ -27,7 +27,7 @@ class HealthDataLoader:
     def load_data(self, min_year=None):
         try:
             if min_year:
-                print(f"Filtering data for year >= {min_year}")
+             print(f"Filtering data for year >= {min_year}")
             with gzip.GzipFile(fileobj=BytesIO(self.compressed_data), mode="rb") as f:
                 context = etree.iterparse(f, events=('end',))
 
@@ -53,11 +53,11 @@ class HealthDataLoader:
                     # Check for WorkoutStatistics specifically, case-insensitive
                     if tag.lower() == 'workoutstatistics':
                         if elem.get("type") == "HKQuantityTypeIdentifierDistanceWalkingRunning":
-                            print(f"FOUND TARGET: WorkoutStatistics with distance {elem.get('sum')}")
+                            #print(f"FOUND TARGET: WorkoutStatistics with distance {elem.get('sum')}")
                             distance_record = self.extract_distance_data(elem)
                             if distance_record:
                                 distance_data.append(distance_record)
-                                print(f"Added WorkoutStatistics distance record: {distance_record}")
+                                #print(f"Added WorkoutStatistics distance record: {distance_record}")
 
                     # Process other record types as before
                     record_type = elem.get("type")
@@ -104,24 +104,15 @@ class HealthDataLoader:
                     # Free memory after processing
                     elem.clear()
 
-                # Print tag counts to help identify all element types
-                print("XML Tag counts:")
-                for tag, count in tag_counts.items():
-                    print(f"  {tag}: {count}")
-
-                print(f"Processed data counts: Heart rate={len(heart_rate_data)}, Workout={len(workout_info)}, "
-                      f"Distance={len(distance_data)}, Calories={len(calories_data)}, Flights={len(flights_climbed_data)}")
-
-
                 return self.merge_data(heart_rate_data, workout_info, calories_data, flights_climbed_data,
                                        distance_data)
         except etree.XMLSyntaxError as e:
             raise ValueError(f"Error parsing XML file: {e}")
 
 
-    #Merge all datasets efficiently and optimize memory usage
+    #Merge all datasets
     def merge_data(self, heart_rate_data, workout_info, calories_data, flights_climbed_data, distance_data=None):
-        # Create dataframes from collected data (unchanged code)
+
         heart_rate_df = pd.DataFrame(heart_rate_data) if heart_rate_data else pd.DataFrame(
             columns=['Date', 'Time', 'HeartRate'])
         workout_df = pd.DataFrame(workout_info) if workout_info else pd.DataFrame(
@@ -159,10 +150,8 @@ class HealthDataLoader:
                 df_dates = df[['Date', 'Time']].copy()
                 all_dates_times = pd.concat([all_dates_times, df_dates])
 
-        # Remove duplicates
+        # Removes the duplicates
         all_dates_times = all_dates_times.drop_duplicates(subset=['Date', 'Time'])
-
-        # USE all_dates_times as the base for merging
         merged_df = all_dates_times.copy()
 
         # heart rate data as the base
@@ -271,18 +260,15 @@ class HealthDataLoader:
                 distance = 0.0
                 unit = elem.get('unit', 'mi')
 
-                # Try multiple approaches to find distance in different formats
-
-                # Check for totalDistance attribute directly on the workout
+                # Check for totalDistance
                 total_distance = elem.get('totalDistance')
                 if total_distance:
                     try:
                         distance = float(total_distance)
-                        print(f"Found direct totalDistance: {distance}")
                     except (ValueError, TypeError):
                         pass
 
-                # Try WorkoutStatistics - using a broader XPath to search deeper in the structure
+                # Looks for distance in WorkoutStatistics
                 for value in elem.findall('.//WorkoutStatistics'):
                     stat_type = value.get('type')
                     if stat_type and ('Distance' in stat_type or 'distance' in stat_type):
@@ -290,12 +276,11 @@ class HealthDataLoader:
                             sum_value = value.get('sum')
                             if sum_value:
                                 distance = float(sum_value)
-                                print(f"Found distance in WorkoutStatistics: {distance}")
                                 break
                         except (TypeError, ValueError):
                             pass
 
-                # Try WorkoutRoute/MetadataEntry
+                # Looks for distance in WorkoutRoute
                 for route in elem.findall('.//WorkoutRoute'):
                     for entry in route.findall('.//MetadataEntry'):
                         if entry.get('key') == 'HKMetadataKeyWorkoutDistance':
@@ -303,15 +288,12 @@ class HealthDataLoader:
                                 value = entry.get('value')
                                 if value:
                                     distance = float(value)
-                                    print(f"Found distance in WorkoutRoute: {distance}")
                                     break
                             except (TypeError, ValueError):
                                 pass
 
-                if distance > 0:
-                    print(f"Final distance for {workout_type}: {distance}")
 
-                # Create entries for each minute of the workout
+                # Creates a record for the duration of the workout
                 minute_interval = 60
                 for i in range(0, int(duration)):
                     minute_distance = distance / (duration / minute_interval) if duration > 0 else 0
@@ -323,7 +305,6 @@ class HealthDataLoader:
                         "Workout": workout_type
                     })
 
-                print(f"Extracted workout: {workout_type} with {len(data)} entries, total distance: {distance}")
         except Exception as e:
             print(f"Error parsing workout data: {e}")
         return data
@@ -334,11 +315,9 @@ class HealthDataLoader:
             # Get element tag without namespace
             tag_name = elem.tag.split('}')[-1].lower() if '}' in elem.tag else elem.tag.lower()
 
-            # Handle both record types
+            # Handles standalone distance data
             if tag_name == 'workoutstatistics' or elem.get("type") == "HKQuantityTypeIdentifierDistanceWalkingRunning":
-                # Get the date (try different possible field names)
                 start_date = elem.get("startDate") or elem.get("creationDate")
-                # Get the value (try different possible field names)
                 value = elem.get("sum") or elem.get("value")
                 unit = elem.get("unit", "mi")
 
@@ -346,7 +325,6 @@ class HealthDataLoader:
                     try:
                         distance = float(value)
                         start_date = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S %z")
-                        #print(f"Found distance record: {tag_name} with {distance} {unit}")
                         return {
                             "Date": start_date.date(),
                             "Time": start_date.time().strftime("%I:%M:%S %p"),
