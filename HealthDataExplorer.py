@@ -1,17 +1,7 @@
-import gzip
-from idlelib.configdialog import tracers
-from io import BytesIO
-
 import pandas as pd
-from datetime import datetime, timedelta
-import numpy as np
-from lxml import etree
 import streamlit as st
 import plotly.express as px
-from unicodedata import category
-
 from UserInputHandler import UserInputHandler
-
 
 
 class HealthDataExplorer:
