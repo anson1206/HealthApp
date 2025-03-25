@@ -1,5 +1,7 @@
 import pandas as pd
 import streamlit as st
+import plotly.express as px
+
 class UserInputHandler:
     def __init__(self):
         #Check if the dataframes exist in the session state
@@ -39,7 +41,8 @@ class UserInputHandler:
 
         # Display updated graph
         water_per_day = st.session_state.water_intake_df.groupby('Date')['Water Intake (gallons)'].sum().reset_index()
-        st.bar_chart(water_per_day.set_index('Date')['Water Intake (gallons)'])
+        fig = px.bar(water_per_day, x='Date', y='Water Intake (gallons)', title='Water Intake per Day')
+        st.plotly_chart(fig)
 
     #Handles the input for calory intake
     def add_calory_intake(self, selected_date):
@@ -70,4 +73,5 @@ class UserInputHandler:
 
         # Displays updated graph
         calory_intake_per_day = st.session_state.calory_intake_df.groupby('Date')['CaloriesIntake'].sum().reset_index()
-        st.bar_chart(calory_intake_per_day.set_index('Date')['CaloriesIntake'])
+        fig = px.bar(calory_intake_per_day, x='Date', y='CaloriesIntake', title='Calories Intake per Day')
+        st.plotly_chart(fig)

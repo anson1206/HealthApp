@@ -28,14 +28,13 @@ class HealthDataExplorer:
         selected_data = st.sidebar.radio("Select Data to Display",
                                          ["Heart Rate", "Workouts & Distance", "Flights Climbed",
                                           "Calories Burned",
-                                          "User Input" ])
+                                          "Water Intake/ Calories Intake" ])
         overview_button = st.sidebar.button("Overview Page")
-        convert_to_csv = st.sidebar.button("Convert to CSV")
 
 
         if selected_data == "Heart Rate":
 
-            view_option = st.radio("Select view", ['Daily', 'Weekly Average'])
+            view_option = st.radio("Select view", ['Daily', 'Weekly'])
 
             # Filter to only include rows with actual heart rate data
             heart_rate_df = self.merged_df.dropna(subset=['HeartRate']).copy()
@@ -81,7 +80,7 @@ class HealthDataExplorer:
                         st.plotly_chart(fig)
 
 
-                elif view_option == 'Weekly Average':
+                elif view_option == 'Weekly':
                     selected_date = st.date_input("Select Date",
                                                           min_value=date_filtered_df['Date'].min(),
                                                           max_value=date_filtered_df['Date'].max(),
@@ -137,7 +136,7 @@ class HealthDataExplorer:
 
 
         elif selected_data == "Workouts & Distance":
-            selected_date = st.sidebar.date_input("Select Date",
+            selected_date = st.date_input("Select Date",
                                                   min_value=date_filtered_df['Date'].min(),
                                                   max_value=date_filtered_df['Date'].max(),
                                                   value=date_filtered_df['Date'].min(),
@@ -243,6 +242,24 @@ class HealthDataExplorer:
             fig.update_layout(hovermode='closest')
             fig.update_traces(marker_color = 'orange')
             st.plotly_chart(fig)
+        elif selected_data == "Water Intake/ Calories Intake":
+            st.write("Here you can input the amount of water you drank and the amount of calories you ate")
+            st.write("Select the date first before entering the amount of water you drank or the amount of calories you ate")
+            selected_date = st.date_input("Select Date",
+                                                  min_value=date_filtered_df['Date'].min(),
+                                                  max_value=date_filtered_df['Date'].max(),
+                                                  value=date_filtered_df['Date'].min())
+            if 'last_selected_date' not in st.session_state or st.session_state.last_selected_date != selected_date:
+                st.session_state.last_selected_date = selected_date
+                st.session_state.water_intake_oz = 0
+                st.session_state.calory_intake = 0
+                st.session_state.water_input = 0
+                st.session_state.calory_input = 0
+            water_intake, calory_intake = st.columns(2)
+            with water_intake:
+                UserInputHandler().add_water_intake(selected_date)
+            with calory_intake:
+                UserInputHandler().add_calory_intake(selected_date)
 
         if overview_button :
             st.session_state['show_overview'] = True
@@ -315,33 +332,4 @@ class HealthDataExplorer:
                                                                   'Distance', 'WorkoutType', 'Flights', 'Calories']])
             if st.button("Close Overview"):
                 st.session_state['show_overview'] = False
-        elif selected_data == "User Input":
-            selected_date = st.sidebar.date_input("Select Date",
-                                                  min_value=date_filtered_df['Date'].min(),
-                                                  max_value=date_filtered_df['Date'].max(),
-                                                  value=date_filtered_df['Date'].min())
-            if 'last_selected_date' not in st.session_state or st.session_state.last_selected_date != selected_date:
-                st.session_state.last_selected_date = selected_date
-                st.session_state.water_intake_oz = 0
-                st.session_state.calory_intake = 0
-                st.session_state.water_input = 0
-                st.session_state.calory_input = 0
-            water_intake, calory_intake = st.columns(2)
-            with water_intake:
 
-
-                st.write('Select the date first before entering the amount of water you drank')
-                UserInputHandler().add_water_intake(selected_date)
-            with calory_intake:
-                st.write('Select the date first before entering the amount of calories you ate')
-                UserInputHandler().add_calory_intake(selected_date)
-
-
-        if convert_to_csv:
-            st.session_state['show_convert_to_csv'] = True
-        if st.session_state.get('show_convert_to_csv', False):
-            st.write('You can download the data as a CSV file')
-            csv = self.merged_df.to_csv(index=False)
-            st.download_button(label="Download CSV", data=csv, file_name='health_data.csv', mime='text/csv')
-            if st.button("Close CSV"):
-                st.session_state['show_convert_to_csv'] = False

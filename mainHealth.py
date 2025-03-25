@@ -9,12 +9,7 @@ from io import BytesIO
 
 st.title("Health Data Explorer")
 
-# Add slider for minimum year in sidebar
-current_year = datetime.now().year
-min_year = st.sidebar.slider("Minimum Year", 2016, current_year, 2020)
-st.session_state['min_year'] = min_year
-include_all_years = st.sidebar.checkbox("Include all years", False)
-st.session_state['include_all_years'] = include_all_years
+
 
 # File uploaders
 uploaded_xml_file = st.sidebar.file_uploader("Choose an XML file", type=['xml'])
@@ -34,6 +29,19 @@ def load_cached_data(file_bytes, min_year=None):
 
 
 health_data = None
+
+#Makes sure that the year slider is only displayed if an XML file is uploaded
+if uploaded_xml_file is not None:
+    file_bytes = uploaded_xml_file.getvalue()
+    health_data = load_cached_data(file_bytes)
+    first_date = health_data['Date'].min().year
+    last_date = health_data['Date'].max().year
+
+    # Add slider for  year filter  in sidebar
+    min_year = st.sidebar.slider("Year Filter", first_date, last_date, first_date)
+    st.session_state['min_year'] = min_year
+    include_all_years = st.sidebar.checkbox("Include all years", False)
+    st.session_state['include_all_years'] = include_all_years
 
 # Process uploaded files
 if uploaded_xml_file is not None and uploaded_gpx_file is not None:
@@ -97,10 +105,21 @@ if st.session_state.get('show_chatbot', False):
     if st.button("Close Chatbot"):
         st.session_state['show_chatbot'] = False
 
-#clear cache button
-if st.sidebar.button("Clear Cache"):
-    st.cache_data.clear()
-    st.rerun()
+
 
 if uploaded_xml_file is None and uploaded_gpx_file is None:
     st.write("Please upload an XML file and/or a GPX file to proceed.")
+
+# Convert to CSV button
+if st.sidebar.button("Convert to CSV"):
+    st.session_state['show_convert_to_csv'] = True
+
+if st.session_state.get('show_convert_to_csv', False):
+    st.write('You can download the data as a CSV file')
+    if health_data is not None:
+        csv = health_data.to_csv(index=False)
+        st.download_button(label="Download CSV", data=csv, file_name='health_data.csv', mime='text/csv')
+    else:
+        st.write("No data to convert to CSV")
+    if st.button("Close CSV"):
+        st.session_state['show_convert_to_csv'] = False
