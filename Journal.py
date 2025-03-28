@@ -2,13 +2,13 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-def add_data(entry):
+def add_data(date, entry):
     if 'Journal_data' not in st.session_state:
         st.session_state['Journal_data'] = []
     st.session_state['Journal_data'].append({
         "entry": entry,
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "time": datetime.now().strftime("%H:%M:%S")
+        "date": date,
+        "time": datetime.now().strftime("%I:%M:%S %p")
     })
 
 def show_data():

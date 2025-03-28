@@ -6,14 +6,15 @@ from AIBot import AIBot
 import Journal
 from Map import GPXMap
 from io import BytesIO
+import pandas as pd
 
 st.title("Health Data Explorer")
 
 
 
 # File uploaders
-uploaded_xml_file = st.sidebar.file_uploader("Choose an XML file", type=['xml'])
-uploaded_gpx_file = st.sidebar.file_uploader("Choose a GPX file", type=['gpx'])
+uploaded_xml_file = st.sidebar.file_uploader("Upload the Apple Health XML file", type=['xml'])
+uploaded_gpx_file = st.sidebar.file_uploader("Upload the Apple Health Workout Route GPX File", type=['gpx'])
 
 
 # Cache the processed health data
@@ -63,7 +64,7 @@ if uploaded_xml_file is not None and uploaded_gpx_file is not None:
         if uploaded_gpx_file is not None:
             map = GPXMap(uploaded_gpx_file)
             map.display_map()
-
+#Display health data if only XML file is uploaded
 elif uploaded_xml_file is not None and uploaded_gpx_file is None:
     with st.spinner("Processing health data..."):
         effective_min_year = None if include_all_years else min_year
@@ -71,7 +72,7 @@ elif uploaded_xml_file is not None and uploaded_gpx_file is None:
         health_data = load_cached_data(file_bytes, effective_min_year)
         explorer = HealthDataExplorer(health_data)
         explorer.display_data()
-
+# Display map if only GPX file is uploaded
 elif uploaded_xml_file is None and uploaded_gpx_file is not None:
     map = GPXMap(uploaded_gpx_file)
     map.display_map()
@@ -81,16 +82,46 @@ if st.sidebar.button("Open Journal"):
     st.session_state['show_journal'] = True
     st.divider()
 
+# Journal section with improved date validation
 if st.session_state.get('show_journal', False):
     st.title("Journal")
+
+    # Get current date to prevent future entries
+    current_date = datetime.now().date()
+
+    # Default date range (if no XML file)
+    min_date = datetime(2021, 1, 1).date()
+    default_date = current_date
+
+
+    if health_data is not None:
+        # Converts the Date column to datetime
+        if not pd.api.types.is_datetime64_dtype(health_data['Date']):
+            dates_series = pd.to_datetime(health_data['Date'])
+        else:
+            dates_series = health_data['Date']
+
+        # Get min date from health data
+        if not dates_series.empty:
+            min_date = dates_series.dt.date.min()
+
+    # Display date input with appropriate range restrictions
+    selected_date = st.date_input(
+        "Select a date for your journal entry",
+        value=default_date,
+        min_value=min_date,
+        max_value=current_date
+    )
+        
     user_input = st.text_input("Enter your journal entry")
     if st.button("Submit"):
-        Journal.add_data(user_input)
+        Journal.add_data(selected_date, user_input)
         st.success("Entry added!")
+
     if st.button("Close Journal"):
         st.session_state['show_journal'] = False
-    else:
-        st.write("No Journal Entries")
+        st.rerun()
+
     Journal.show_data()
     st.divider()
 
@@ -100,10 +131,11 @@ if st.sidebar.button("Open Chatbot"):
 
 if st.session_state.get('show_chatbot', False):
     api_key = st.secrets["OPENAI_API_KEY"]
-    chatbot = AIBot(api_key, health_data)
+    chatbot = AIBot(api_key, health_data if uploaded_xml_file is not None else None)
     chatbot.display_chat()
     if st.button("Close Chatbot"):
         st.session_state['show_chatbot'] = False
+        st.rerun()
 
 
 
@@ -123,3 +155,4 @@ if st.session_state.get('show_convert_to_csv', False):
         st.write("No data to convert to CSV")
     if st.button("Close CSV"):
         st.session_state['show_convert_to_csv'] = False
+        st.rerun()

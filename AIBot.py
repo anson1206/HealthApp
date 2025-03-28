@@ -6,7 +6,7 @@ import pandas as pd
 class AIBot:
     def __init__(self, api_key, health_data):
         self.api_key = api_key
-        self.health_data = self.merge_health_data(health_data)
+        self.health_data = self.merge_health_data(health_data) if health_data is not None else None
         self.chat_history = []
         openai.api_key = self.api_key
 
@@ -19,27 +19,48 @@ class AIBot:
             st.session_state.calory_intake_df['Date'] = pd.to_datetime(st.session_state.calory_intake_df['Date'])
             health_data = pd.merge(health_data, st.session_state.calory_intake_df, on='Date', how='left', sort=False)
         return health_data
+
     #Handles both general AI responses and health-related queries
     def get_response(self, prompt):
         date = self.extract_date_from_prompt(prompt)
         prompt_lower = prompt.lower()
 
         # Health Data Responses
-        if "workouts" in prompt_lower:
+        if "workouts" in prompt_lower and date is not None:
             return self.get_workout_info(date)
-        elif "heart rate range" in prompt_lower or "heart rate" in prompt_lower or "heartrate" in prompt_lower:
+        elif "workout" in prompt_lower and date is None:
+            return self.get_general_ai_response(prompt)
+
+        elif ("heart rate range" in prompt_lower or "heart rate" in prompt_lower or "heartrate" in prompt_lower) and date is not None:
             return self.get_heart_rate_range(date)
-        elif "calories" in prompt_lower:
+        elif "heart rate range" in prompt_lower or "heart rate" in prompt_lower or "heartrate" in prompt_lower:
+            return self.get_general_ai_response(prompt)
+
+        elif "calories" in prompt_lower and date is not None:
             if "burned" in prompt_lower or "burn" in prompt_lower:
                 return self.burned_calories(date)
             if "range" in prompt_lower:
                 return self.cal_range(date)
             return self.recommend_calories(date)
-        elif "stairs" in prompt_lower or "flights climbed" in prompt_lower:
+        elif "calories" in prompt_lower:
+            return self.get_general_ai_response(prompt)
+
+        elif ("stairs" in prompt_lower or "flights climbed" in prompt_lower) and date is not None:
             return self.get_flights_climbed(date)
+        elif "stairs" in prompt_lower or "flights climbed" in prompt_lower:
+            return self.get_general_ai_response(prompt)
+
         elif "hydration" in prompt_lower or "water" in prompt_lower:
             return self.recommend_hydration(date)
-        # Goes back to the general response if there's no health data
+
+        elif (("run" in prompt_lower or "walk" in prompt_lower or "jog" in prompt_lower or
+               "miles" in prompt_lower or "total distance" in prompt_lower) and date is not None):
+            return self.distance(date)
+        elif ("run" in prompt_lower or "walk" in prompt_lower or "jog" in prompt_lower or
+              "miles" in prompt_lower or "total distance" in prompt_lower):
+            return self.get_general_ai_response(prompt)
+
+        # General response if no health data matches
         return self.get_general_ai_response(prompt)
 
    #Uses OpenAI to generate a response to the user's prompt
@@ -54,7 +75,7 @@ class AIBot:
                 model=st.session_state["openai_model"],
                 messages=st.session_state["messages"]
             )
-            # Extract the response content correctly
+            # Gets the response content
             response_content = response.choices[0].message.content
             # Check if the response is empty
             if not response_content.strip():
@@ -71,7 +92,7 @@ class AIBot:
             return "No workout data available."
 
         if date:
-            # Ensure we're working with datetime objects
+            # Convert the date to a datetime object
             if not pd.api.types.is_datetime64_dtype(self.health_data['Date']):
                 self.health_data['Date'] = pd.to_datetime(self.health_data['Date'])
 
@@ -96,7 +117,7 @@ class AIBot:
             # Filter data for the specific date
             filtered_data = self.health_data[self.health_data["Date"].dt.date == date]
 
-            # Filter out null/missing/zero heart rate values
+            # Filters out invalid heart rate data
             valid_hr_data = filtered_data[filtered_data["HeartRate"].notna() & (filtered_data["HeartRate"] > 0)]
 
             if not valid_hr_data.empty:
@@ -115,7 +136,7 @@ class AIBot:
         if date is None:
             return "Please specify a valid date to check calorie data."
         try:
-            # Ensure we're working with datetime objects for proper comparison
+            # Convert the date to a datetime object
             if not pd.api.types.is_datetime64_dtype(self.health_data['Date']):
                 self.health_data['Date'] = pd.to_datetime(self.health_data['Date'])
 
@@ -136,7 +157,7 @@ class AIBot:
         if self.health_data is None or "Calories" not in self.health_data.columns:
             return "No calorie data available."
         if date:
-            # Ensure we're working with datetime objects
+            # Convert the date to a datetime object
             if not pd.api.types.is_datetime64_dtype(self.health_data['Date']):
                 self.health_data['Date'] = pd.to_datetime(self.health_data['Date'])
 
@@ -159,6 +180,7 @@ class AIBot:
                 self.health_data['Date'] = pd.to_datetime(self.health_data['Date'])
             filtered_data = self.health_data[self.health_data["Date"] == date]
 
+            #Gives heart rate-based calorie recommendations
             if not filtered_data.empty:
                 avg_hr = filtered_data["HeartRate"].mean()
                 total_calories_intake = filtered_data["CaloriesIntake"].sum()
@@ -207,6 +229,54 @@ class AIBot:
                 else:
                     return "Great! You are well-hydrated."
         return "No water intake data available to provide hydration tips."
+
+    #Calculates the total distance traveled for a given date
+    def distance(self, date):
+        if self.health_data is None or "Distance" not in self.health_data.columns:
+            return "No distance data available."
+        if date:
+            # Formats the  date to a datetime object
+            if not pd.api.types.is_datetime64_dtype(self.health_data['Date']):
+                self.health_data['Date'] = pd.to_datetime(self.health_data['Date'])
+
+            # Filter data for the specific date
+            filtered_data = self.health_data[self.health_data["Date"].dt.date == date]
+
+            if filtered_data.empty:
+                return f"No distance data available for {date}."
+
+            # Handle workout data with any distance value
+            if "WorkoutType" in self.health_data.columns:
+                #Drops rows with NaN values in the WorkoutType column
+                workout_data = filtered_data[filtered_data["WorkoutType"].notna()]
+
+                if not workout_data.empty:
+                    #Gets the maximum distance for each workout type
+                    result = workout_data.groupby("WorkoutType")["Distance"].max().reset_index()
+
+                    total_distance = result["Distance"].sum()
+                    workout_details = []
+
+                    for _, row in result.iterrows():
+                        workout_details.append(f"{row['WorkoutType']}: {row['Distance']:.2f} miles")
+
+                    workout_detail_str = ", ".join(workout_details)
+                    return f"You traveled a total distance of {total_distance:.2f} miles on {date}.\nBreakdown by workout: {workout_detail_str}"
+
+            # Checks for valid heart rate data
+            if "HeartRate" in self.health_data.columns:
+                hr_data = filtered_data[filtered_data["HeartRate"].notna() & (filtered_data["HeartRate"] > 0)]
+                if not hr_data.empty:
+                    total_distance = hr_data["Distance"].sum()
+                    return f"You traveled a total distance of {total_distance:.2f} miles on {date}."
+
+
+            total_distance = filtered_data["Distance"].sum()
+            return f"You traveled a total distance of {total_distance:.2f} miles on {date}."
+
+        return "Please specify a date to check distance data."
+
+
 
     # Extracts a date from the user’s input if available
     def extract_date_from_prompt(self, prompt):

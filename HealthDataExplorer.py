@@ -19,10 +19,9 @@ class HealthDataExplorer:
             st.error("No valid dates available in the data.")
             return
 
-        # Remove the duplicate year filter - the data is already filtered in mainHealth.py
         st.sidebar.subheader("Data Filtering")
 
-        # Use the already filtered dataframe directly
+        # Uses the already filtered dataframe directly
         date_filtered_df = self.merged_df
 
         selected_data = st.sidebar.radio("Select Data to Display",
@@ -46,10 +45,10 @@ class HealthDataExplorer:
                 heart_rate_df['DateTime'] = pd.to_datetime(
                     heart_rate_df['Date'].astype(str) + ' ' + heart_rate_df['Time'], errors='coerce')
 
-                # Drop rows where DateTime conversion failed
+                # Drop rows where DateTime is NaT
                 heart_rate_df = heart_rate_df.dropna(subset=['DateTime'])
 
-                # Sort by time for proper line connection
+                # Sort by DateTime
                 heart_rate_df = heart_rate_df.sort_values('DateTime')
 
 
@@ -221,7 +220,7 @@ class HealthDataExplorer:
                     st.error("Distance column not found in the data")
 
         elif selected_data == "Flights Climbed":
-            st.write('You Climbed ', self.merged_df['Flights'].sum(), ' flights of stairs')
+            st.write('You Climbed ', self.merged_df['Flights'].sum(), ' Flights of Stairs')
             #st.bar_chart(self.merged_df.groupby('Date')['Flights'].sum().reset_index().set_index('Date')['Flights'])
             if not pd.api.types.is_datetime64_dtype(self.merged_df['Date']):
                 self.merged_df['Date'] = pd.to_datetime(self.merged_df['Date'], errors='coerce')
@@ -230,6 +229,7 @@ class HealthDataExplorer:
             #fig.update_xaxes(tickformat='%m-%d')
             fig.update_layout(hovermode='closest')
             fig.update_traces(marker_color = 'red')
+            fig.update_xaxes(rangeslider_visible=True)
             st.plotly_chart(fig)
 
         elif selected_data == "Calories Burned":
@@ -241,6 +241,8 @@ class HealthDataExplorer:
             #fig.update_xaxes(tickformat='%m-%d')
             fig.update_layout(hovermode='closest')
             fig.update_traces(marker_color = 'orange')
+            fig.update_xaxes(rangeslider_visible=True)
+
             st.plotly_chart(fig)
         elif selected_data == "Water Intake/ Calories Intake":
             st.write("Here you can input the amount of water you drank and the amount of calories you ate")
@@ -271,6 +273,10 @@ class HealthDataExplorer:
                                       horizontal=True)
 
             if df_view_option == "Summarized View":
+                st.info(
+                    "This view aggregates data by hour, showing statistics for heart rate, totals distance, "
+                    "flights of stairs climbed, and calories burned. It provides a condensed overview of your health data.")
+
                 # Group by hour to reduce rows
                 date_filtered_df['Hour'] = pd.to_datetime(date_filtered_df['Time'], format="%I:%M:%S %p").dt.hour
                 hourly_summary = date_filtered_df.groupby(['Date', 'Hour', 'WorkoutType']).agg({
@@ -284,7 +290,7 @@ class HealthDataExplorer:
                 hourly_summary.columns = [f"{a}_{b}" if b else a for a, b in hourly_summary.columns]
                 hourly_summary['Time'] = hourly_summary['Hour'].apply(lambda x: f"{x:02d}:00")
 
-                # Create readable summary table
+                # Creates readable summary table
                 st.dataframe(hourly_summary[[
                     'Date', 'Time', 'WorkoutType',
                     'HeartRate_mean', 'HeartRate_min', 'HeartRate_max',
@@ -299,13 +305,13 @@ class HealthDataExplorer:
                 }))
 
             elif df_view_option == "Filtered View":
-                selected_date = st.date_input("Select Date for Overview",
-                                              min_value=date_filtered_df['Date'].min(),
-                                              max_value=date_filtered_df['Date'].max(),
-                                              value=date_filtered_df['Date'].min(),
-                                              key='overview_date')
+                st.info(
+                    "This view allows you to filter the data by date or workout type, showing specific records that match your criteria.")
 
                 filter_type = st.radio("Select filter type", ["Date", "Workout Type"])
+                #Drops rows that dont have heart rate data
+                date_filtered_df = date_filtered_df.dropna(subset=['HeartRate'])
+
                 #Shows the workout types for the selected date
                 if filter_type == "Workout Type":
                     workout_options = list(date_filtered_df['WorkoutType'].dropna().unique())
@@ -315,21 +321,36 @@ class HealthDataExplorer:
                         st.dataframe(date_filtered_df[['Date', 'Time', 'HeartRate', 'Distance', 'WorkoutType', 'Flights', 'Calories']])
                 #Shows the data for the selected date
                 elif filter_type == "Date":
+                    selected_date = st.date_input("Select Date for Overview",
+                                                  min_value=date_filtered_df['Date'].min(),
+                                                  max_value=date_filtered_df['Date'].max(),
+                                                  value=date_filtered_df['Date'].min(),
+                                                  key='overview_date')
                     date_filtered_df = date_filtered_df[date_filtered_df['Date'] == pd.to_datetime(selected_date)]
                     st.dataframe(date_filtered_df[['Date', 'Time', 'HeartRate', 'Distance', 'WorkoutType', 'Flights', 'Calories']])
 
 
-            else:
-                # Show raw data but with pagination
+            elif df_view_option == "Raw Data":
+                st.info(
+                    "This view shows all individual data points with heart rate measurements. "
+                    "Use the slider to change the amount of records displayed per page.")
+
+                # Filters out the rows that dont have heart rate data
+                date_filtered_df_with_hr = date_filtered_df.dropna(subset=['HeartRate'])
+
+                # Creates a slider to change the amount of records displayed per page
                 page_size = st.slider("Rows per page", min_value=10, max_value=100, value=25)
-                page_number = st.number_input("Page", min_value=1,
-                                              max_value=max(1, len(date_filtered_df) // page_size), value=1)
+                max_pages = max(1, len(date_filtered_df_with_hr) // page_size)
+                page_number = st.number_input("Page", min_value=1, max_value=max_pages, value=1)
 
                 start_idx = (page_number - 1) * page_size
                 end_idx = start_idx + page_size
 
-                st.dataframe(date_filtered_df.iloc[start_idx:end_idx][['Date', 'Time', 'HeartRate',
-                                                                  'Distance', 'WorkoutType', 'Flights', 'Calories']])
+
+                st.dataframe(date_filtered_df_with_hr.iloc[start_idx:end_idx][['Date', 'Time', 'HeartRate',
+                                                                                   'Distance', 'WorkoutType', 'Flights',
+                                                                                   'Calories']])
             if st.button("Close Overview"):
                 st.session_state['show_overview'] = False
+                st.rerun()
 
