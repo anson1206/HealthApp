@@ -1,3 +1,10 @@
+"""
+HealthDataExplorer.py
+Anson Graumann
+This module is responsible for displaying the health data in a user-friendly way.
+It includes filtering options, data visualization, and an overview of the data.
+"""
+
 import pandas as pd
 import streamlit as st
 import plotly.express as px
@@ -221,12 +228,11 @@ class HealthDataExplorer:
 
         elif selected_data == "Flights Climbed":
             st.write('You Climbed ', self.merged_df['Flights'].sum(), ' Flights of Stairs')
-            #st.bar_chart(self.merged_df.groupby('Date')['Flights'].sum().reset_index().set_index('Date')['Flights'])
             if not pd.api.types.is_datetime64_dtype(self.merged_df['Date']):
                 self.merged_df['Date'] = pd.to_datetime(self.merged_df['Date'], errors='coerce')
+
             filter_by_date = self.merged_df.groupby('Date')['Flights'].sum().reset_index()
             fig = px.bar(filter_by_date, x='Date', y='Flights', title='Flights Climbed Over Time', labels={'Date': 'Date', 'Flights': 'Flights Climbed'})
-            #fig.update_xaxes(tickformat='%m-%d')
             fig.update_layout(hovermode='closest')
             fig.update_traces(marker_color = 'red')
             fig.update_xaxes(rangeslider_visible=True)
@@ -237,8 +243,8 @@ class HealthDataExplorer:
             if not pd.api.types.is_datetime64_dtype(self.merged_df['Date']):
                 self.merged_df['Date'] = pd.to_datetime(self.merged_df['Date'], errors='coerce')
             filter_by_date = self.merged_df.groupby('Date')['Calories'].sum().reset_index()
+
             fig = px.bar(filter_by_date, x='Date', y='Calories', title='Calories Burned Over Time', labels={'Date': 'Date', 'Calories': 'Calories Burned'})
-            #fig.update_xaxes(tickformat='%m-%d')
             fig.update_layout(hovermode='closest')
             fig.update_traces(marker_color = 'orange')
             fig.update_xaxes(rangeslider_visible=True)
@@ -251,6 +257,7 @@ class HealthDataExplorer:
                                                   min_value=date_filtered_df['Date'].min(),
                                                   max_value=date_filtered_df['Date'].max(),
                                                   value=date_filtered_df['Date'].min())
+
             if 'last_selected_date' not in st.session_state or st.session_state.last_selected_date != selected_date:
                 st.session_state.last_selected_date = selected_date
                 st.session_state.water_intake_oz = 0
@@ -263,6 +270,7 @@ class HealthDataExplorer:
             with calory_intake:
                 UserInputHandler().add_calory_intake(selected_date)
 
+        # Show overview button
         if overview_button :
             st.session_state['show_overview'] = True
 
@@ -271,7 +279,7 @@ class HealthDataExplorer:
             df_view_option = st.radio("Select display mode",
                                       ["Summarized View", "Filtered View", "Raw Data"],
                                       horizontal=True)
-
+            #Summarized View Option
             if df_view_option == "Summarized View":
                 st.info(
                     "This view aggregates data by hour, showing statistics for heart rate, totals distance, "
@@ -304,6 +312,7 @@ class HealthDataExplorer:
                     'Calories_sum': 'Calories'
                 }))
 
+            #Filtered View Option
             elif df_view_option == "Filtered View":
                 st.info(
                     "This view allows you to filter the data by date or workout type, showing specific records that match your criteria.")
@@ -329,7 +338,7 @@ class HealthDataExplorer:
                     date_filtered_df = date_filtered_df[date_filtered_df['Date'] == pd.to_datetime(selected_date)]
                     st.dataframe(date_filtered_df[['Date', 'Time', 'HeartRate', 'Distance', 'WorkoutType', 'Flights', 'Calories']])
 
-
+            #Raw Data Option
             elif df_view_option == "Raw Data":
                 st.info(
                     "This view shows all individual data points with heart rate measurements. "
@@ -346,7 +355,7 @@ class HealthDataExplorer:
                 start_idx = (page_number - 1) * page_size
                 end_idx = start_idx + page_size
 
-
+                #Creates a dataframe with the selected amount of records
                 st.dataframe(date_filtered_df_with_hr.iloc[start_idx:end_idx][['Date', 'Time', 'HeartRate',
                                                                                    'Distance', 'WorkoutType', 'Flights',
                                                                                    'Calories']])

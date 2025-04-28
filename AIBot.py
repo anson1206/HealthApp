@@ -1,3 +1,10 @@
+"""
+AIBot.py
+Anson Graumann
+This class is designed to handle both health-related queries and general AI responses.
+It uses OpenAI's API to generate responses based on user input and health data.
+"""
+
 import openai
 import streamlit as st
 from datetime import datetime
@@ -10,6 +17,7 @@ class AIBot:
         self.chat_history = []
         openai.api_key = self.api_key
 
+    #Merges health data with water and calorie intake data
     def merge_health_data(self, health_data):
         health_data['Date'] = pd.to_datetime(health_data['Date'])
         if 'water_intake_df' in st.session_state:

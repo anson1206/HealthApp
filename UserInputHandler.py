@@ -1,3 +1,8 @@
+"""
+UserInputHandler.py
+Anson Graumann
+In this module, the user input is handled for water and calorie intake.
+"""
 import pandas as pd
 import streamlit as st
 import plotly.express as px

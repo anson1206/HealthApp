@@ -1,3 +1,10 @@
+"""
+HealthDataLoader.py
+Anson Graumann
+This module is responsible for loading and processing health data from an XML file.
+It takes in the uploaded XML file, compresses it, and extracts relevant health metrics such as heart rate,
+"""
+
 import gzip
 from io import BytesIO
 import pandas as pd
@@ -30,6 +37,7 @@ class HealthDataLoader:
             with gzip.GzipFile(fileobj=BytesIO(self.compressed_data), mode="rb") as f:
                 context = etree.iterparse(f, events=('end',))
 
+                # Initialize lists to store data
                 heart_rate_data = []
                 workout_info = []
                 calories_data = []
@@ -39,6 +47,7 @@ class HealthDataLoader:
                 # Debug counters
                 tag_counts = {}
 
+                #Looks for key records in the XML file
                 for event, elem in context:
                     # Get tag name without namespace
                     full_tag = elem.tag
@@ -52,22 +61,21 @@ class HealthDataLoader:
                     # Check for WorkoutStatistics specifically, case-insensitive
                     if tag.lower() == 'workoutstatistics':
                         if elem.get("type") == "HKQuantityTypeIdentifierDistanceWalkingRunning":
-                            #print(f"FOUND TARGET: WorkoutStatistics with distance {elem.get('sum')}")
                             distance_record = self.extract_distance_data(elem)
                             if distance_record:
                                 distance_data.append(distance_record)
-                                #print(f"Added WorkoutStatistics distance record: {distance_record}")
 
                     # Process other record types as before
                     record_type = elem.get("type")
 
+                    #Process heart rate data
                     if record_type == "HKQuantityTypeIdentifierHeartRate":
                         hr_data = self.extract_heart_rate_data(elem)
                         if hr_data:
                             # Only add the record if it meets the year criteria
                             if min_year is None or hr_data["Date"].year >= min_year:
                                 heart_rate_data.append(hr_data)
-
+                    # Process workout data
                     elif tag == 'workout':
                         workout_data = self.extract_workout_and_distance_info(elem)
                         if workout_data:
@@ -80,20 +88,21 @@ class HealthDataLoader:
                                                          if record["Date"].year >= min_year]
                                 workout_info.extend(filtered_workout_data)
 
-                                # For distance data
+                    # Process distance data
                     elif record_type == "HKQuantityTypeIdentifierDistanceWalkingRunning":
                         distance_record = self.extract_distance_data(elem)
                         if distance_record:
                             if min_year is None or distance_record["Date"].year >= min_year:
                                 distance_data.append(distance_record)
-                    # For calories data
+
+                    # Processes calories data
                     elif record_type == "HKQuantityTypeIdentifierActiveEnergyBurned":
                         calories_record = self.extract_calories_data(elem)
                         if calories_record:
                             if min_year is None or calories_record["Date"].year >= min_year:
                                 calories_data.append(calories_record)
 
-                    # For flights climbed data
+                    # Processes flights climbed data
                     elif record_type == "HKQuantityTypeIdentifierFlightsClimbed":
                             flights_record = self.extract_flights_climbed(elem)
                             if flights_record:
@@ -109,7 +118,7 @@ class HealthDataLoader:
             raise ValueError(f"Error parsing XML file: {e}")
 
 
-    #Merge all datasets
+    #Merge all lists into a single DataFrame
     def merge_data(self, heart_rate_data, workout_info, calories_data, flights_climbed_data, distance_data=None):
 
         heart_rate_df = pd.DataFrame(heart_rate_data) if heart_rate_data else pd.DataFrame(
@@ -158,10 +167,12 @@ class HealthDataLoader:
             merged_df = pd.merge(merged_df, heart_rate_df, on=['Date', 'Time'], how='left')
             merged_df = merged_df.drop_duplicates(subset=['Date', 'Time'])
         else:
+            # Merges the workout data with the heart rate data
             if not workout_df.empty:
                 merged_df = workout_df[['Date', 'Time']].copy()
                 merged_df['HeartRate'] = np.nan
             else:
+                # Goes through the other data amd merges them based on the date and time, drops empty data
                 for df, col in [(distance_df, 'Distance'), (flights_df, 'Flights'), (calories_df, 'Calories')]:
                     if not df.empty:
                         merged_df = df[['Date', 'Time']].copy()
@@ -173,6 +184,7 @@ class HealthDataLoader:
 
         # Add workout data
         if not workout_df.empty:
+            #Creates a temporary DataFrame to merge with the main DataFrame
             workout_temp = workout_df.groupby(['Date', 'Time']).agg({
                 'Distance': 'sum',
                 'Workout': 'first',
@@ -184,10 +196,12 @@ class HealthDataLoader:
             merged_df['WorkoutType'] = None
 
         # Add standalone distance data where available
+        # Creates a temporary DataFrame to merge with the main DataFrame
         if not distance_df.empty:
             distance_temp = distance_df.copy()
             distance_temp = distance_temp.rename(columns={'Distance': 'Distance_standalone'})
             merged_df = pd.merge(merged_df, distance_temp, on=['Date', 'Time'], how='left')
+            # Adds  standalone distance data to the main DataFrame
             if 'Distance' in merged_df.columns:
                 mask = merged_df['Distance'].isna() & merged_df['Distance_standalone'].notna()
                 merged_df.loc[mask, 'Distance'] = merged_df.loc[mask, 'Distance_standalone']
@@ -223,14 +237,17 @@ class HealthDataLoader:
             merged_df['Calories'] = merged_df['Calories'].fillna(0.0)
 
         return merged_df
-    # Extract data from XML elements
+
+    # Extracts heart rate data from an element
     @staticmethod
     def extract_heart_rate_data(elem):
         try:
             creation_date = elem.get("creationDate")
             value = elem.get("value")
+            # Checks if the creation date and value are present
             if creation_date and value and value.isdigit():
                 creation_date = datetime.strptime(creation_date, "%Y-%m-%d %H:%M:%S %z")
+               #Returns a dictionary with the date, time, and heart rate
                 return {
                     "Date": creation_date.date(),
                     "Time": creation_date.time().strftime("%I:%M:%S %p"),
@@ -250,12 +267,13 @@ class HealthDataLoader:
             end_date_str = elem.get("endDate")
             workout_type = elem.get("workoutActivityType")
 
+            # Check if start and end dates are present
             if start_date_str and end_date_str:
                 start_date = datetime.strptime(start_date_str, "%Y-%m-%d %H:%M:%S %z")
                 end_date = datetime.strptime(end_date_str, "%Y-%m-%d %H:%M:%S %z")
                 duration = (end_date - start_date).total_seconds()
 
-                # Initialize distance
+                # Initialize distance and units
                 distance = 0.0
                 unit = elem.get('unit', 'mi')
 
@@ -270,6 +288,7 @@ class HealthDataLoader:
                 # Looks for distance in WorkoutStatistics
                 for value in elem.findall('.//WorkoutStatistics'):
                     stat_type = value.get('type')
+                    #Gets the distance value
                     if stat_type and ('Distance' in stat_type or 'distance' in stat_type):
                         try:
                             sum_value = value.get('sum')
@@ -295,7 +314,9 @@ class HealthDataLoader:
                 # Creates a record for the duration of the workout
                 minute_interval = 60
                 for i in range(0, int(duration)):
+                    # Calculate the distance for each minute
                     minute_distance = distance / (duration / minute_interval) if duration > 0 else 0
+                    #Appends the data to the list
                     data.append({
                         "Date": (start_date + timedelta(seconds=i)).date(),
                         "Time": (start_date + timedelta(seconds=i)).time().strftime("%I:%M:%S %p"),
@@ -307,6 +328,9 @@ class HealthDataLoader:
         except Exception as e:
             print(f"Error parsing workout data: {e}")
         return data
+
+
+
     #Extract standalone distance data from an element
     @staticmethod
     def extract_distance_data(elem):
@@ -319,8 +343,9 @@ class HealthDataLoader:
                 start_date = elem.get("startDate") or elem.get("creationDate")
                 value = elem.get("sum") or elem.get("value")
                 unit = elem.get("unit", "mi")
-
+                #Checks if the start date and value are present
                 if start_date and value:
+                    #Gets the distance value and returns the values
                     try:
                         distance = float(value)
                         start_date = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S %z")
@@ -341,6 +366,7 @@ class HealthDataLoader:
     # Extract calories data from an element
     @staticmethod
     def extract_calories_data(elem):
+       #Gets the date and values from the element to return
         try:
             creation_date = elem.get("creationDate")
             value = elem.get("value")
@@ -358,6 +384,7 @@ class HealthDataLoader:
     # Extract flights climbed data from an element
     @staticmethod
     def extract_flights_climbed(elem):
+        #Gets the creation date and value from the element to return
         try:
             creation_date = elem.get("creationDate")
             value = elem.get("value")

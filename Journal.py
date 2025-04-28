@@ -1,7 +1,13 @@
+"""
+Journal.py
+Anson Graumann
+In this module, a simple journal is created to log entries with a date and time.
+"""
+
 import streamlit as st
-import pandas as pd
 from datetime import datetime
 
+# Adds the data as a list to the session state
 def add_data(date, entry):
     if 'Journal_data' not in st.session_state:
         st.session_state['Journal_data'] = []
@@ -11,6 +17,7 @@ def add_data(date, entry):
         "time": datetime.now().strftime("%I:%M:%S %p")
     })
 
+# Displays the data in the session state
 def show_data():
     if 'Journal_data' in st.session_state and st.session_state['Journal_data']:
         st.write("Journal Entries")
