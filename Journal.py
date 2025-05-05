@@ -6,15 +6,29 @@ In this module, a simple journal is created to log entries with a date and time.
 
 import streamlit as st
 from datetime import datetime
+import pytz
 
 # Adds the data as a list to the session state
 def add_data(date, entry):
     if 'Journal_data' not in st.session_state:
         st.session_state['Journal_data'] = []
+
+    # Define the local timezone
+    local_tz = pytz.timezone('America/New_York')
+
+    # Parse the date and set it to the start of the day in the local timezone
+    date = datetime.strptime(str(date), "%Y-%m-%d")
+    date = local_tz.localize(date).date()
+
+    # Get the current time in the local timezone
+    now = datetime.now(pytz.utc).astimezone(local_tz)
+    formatted_time = now.strftime("%I:%M:%S %p")
+
+    # Add the entry to the session state
     st.session_state['Journal_data'].append({
         "entry": entry,
         "date": date,
-        "time": datetime.now().strftime("%I:%M:%S %p")
+        "time": formatted_time
     })
 
 # Displays the data in the session state
