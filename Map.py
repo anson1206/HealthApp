@@ -45,6 +45,6 @@ class GPXMap:
         return m
 
     def display_map(self):
-        st.write(f"Total distance: {self.get_distance()} miles")
+       # st.write(f"Total distance: {self.get_distance()} miles")
         st_folium(self.create_map(), width=700, height=500)
 

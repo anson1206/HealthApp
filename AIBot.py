@@ -58,8 +58,11 @@ class AIBot:
         elif "stairs" in prompt_lower or "flights climbed" in prompt_lower:
             return self.get_general_ai_response(prompt)
 
-        elif "hydration" in prompt_lower or "water" in prompt_lower:
-            return self.recommend_hydration(date)
+        elif "water" in prompt_lower :
+            if "recommendation" in prompt_lower or "recommend hydration" in prompt_lower:
+                return self.recommend_hydration(date)
+            return self.get_water_intake(date)
+
 
         elif (("run" in prompt_lower or "walk" in prompt_lower or "jog" in prompt_lower or
                "miles" in prompt_lower or "total distance" in prompt_lower) and date is not None):
@@ -237,6 +240,23 @@ class AIBot:
                 else:
                     return "Great! You are well-hydrated."
         return "No water intake data available to provide hydration tips."
+
+    #Gets the amount of water intake for a given date
+    def get_water_intake(self, date):
+        if self.health_data is None or "Water Intake (gallons)" not in self.health_data.columns:
+            return "No water intake data available."
+        if date:
+            if not pd.api.types.is_datetime64_dtype(self.health_data['Date']):
+                self.health_data['Date'] = pd.to_datetime(self.health_data['Date'])
+
+            # Filter data for the specific date
+            filtered_data = self.health_data[self.health_data["Date"].dt.date == date]
+
+            if not filtered_data.empty:
+                total_water = filtered_data["Water Intake (gallons)"].sum()
+                return f"You drank {total_water:.2f} gallons of water on {date}."
+        return "No water intake data available for this date."
+
 
     #Calculates the total distance traveled for a given date
     def distance(self, date):
